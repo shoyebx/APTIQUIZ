@@ -1,3 +1,9 @@
 {
-  "/page": "app/page.js"
+  "/question-bank/page": "app/question-bank/page.js",
+  "/api/question-sets/route": "app/api/question-sets/route.js",
+  "/page": "app/page.js",
+  "/question-bank/create/page": "app/question-bank/create/page.js",
+  "/question-bank/[setId]/page": "app/question-bank/[setId]/page.js",
+  "/api/leaderboard/route": "app/api/leaderboard/route.js",
+  "/api/profile/me/route": "app/api/profile/me/route.js"
 }

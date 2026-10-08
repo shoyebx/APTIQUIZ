@@ -136,7 +136,8 @@ export default function QuestionSetPage({ params }: { params: { setId: string } 
       setQuestionSet((current) => {
         if (!current) return current;
         const questions = isNew ? [...current.questions, saved] : current.questions.map((question) => question.id === saved.id ? saved : question);
-        return { ...current, status: 'draft', questions, readiness: { ready: false, issues: [] } };
+        const ready = Boolean(current.name.trim() && questions.length);
+        return { ...current, status: 'draft', questions, readiness: { ready, issues: ready ? [] : ['Add a set name.'] } };
       });
       setSelectedQuestionId(saved.id);
       setCreatingQuestion(false);
@@ -172,7 +173,8 @@ export default function QuestionSetPage({ params }: { params: { setId: string } 
       const response = await fetch(`/api/question-sets/${params.setId}/questions/${selectedQuestionId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       if (!response.ok) throw await responseError(response);
       const nextQuestions = questionSet.questions.filter((question) => question.id !== selectedQuestionId).map((question, order) => ({ ...question, order }));
-      setQuestionSet({ ...questionSet, status: 'draft', questions: nextQuestions });
+      const ready = Boolean(questionSet.name.trim() && nextQuestions.length);
+      setQuestionSet({ ...questionSet, status: 'draft', questions: nextQuestions, readiness: { ready, issues: ready ? [] : ['Add at least one question.'] } });
       setSelectedQuestionId(nextQuestions[0]?.id || null);
       setCreatingQuestion(false);
       setInfo('Question deleted.');
