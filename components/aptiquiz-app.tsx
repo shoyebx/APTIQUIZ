@@ -29,7 +29,6 @@ const navItems = [
   { label: 'Home', href: '#home' },
   { label: 'How It Works', href: '#how-it-works' },
   { label: 'Features', href: '#features' },
-  { label: 'Question Bank', href: '/question-bank' },
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'About', href: '#about' },
 ];

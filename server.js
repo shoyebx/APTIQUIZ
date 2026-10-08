@@ -342,16 +342,6 @@ app.prepare().then(() => {
       }
 
       try {
-        if (!questionSetId) {
-          room.questions = createRoom({ hostName: room.hostName }).questions;
-          room.questionIndex = 0;
-          room.questionResults = null;
-          room.questionSetId = null;
-          room.questionSetName = 'Built-in aptitude set';
-          await broadcastRoom(room);
-          socket.emit('question_set_selected', { questionSetId: null, questionSetName: room.questionSetName });
-          return;
-        }
         const profile = await resolveProfile(profileToken);
         if (!profile || (room.players[0].profileId && room.players[0].profileId !== profile.id)) {
           socket.emit('error', sanitizeError('This host session does not own the selected question set.'));
