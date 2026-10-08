@@ -170,8 +170,10 @@ export default function AptiQuizApp() {
   const joinInputRef = useRef<HTMLInputElement | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [socketReady, setSocketReady] = useState(false);
+  // eslint-disable-line @typescript-eslint/no-unused-vars
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'disconnected'>('reconnecting');
   const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(null);
+  // eslint-disable-line @typescript-eslint/no-unused-vars
   const [roundHistory, setRoundHistory] = useState<HostRoundSnapshot[]>([]);
   const [hostName, setHostName] = useState('');
   const [playerName, setPlayerName] = useState('');
