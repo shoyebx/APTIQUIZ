@@ -1,9 +1,8 @@
 {
-  "/question-bank/page": "app/question-bank/page.js",
-  "/api/question-sets/route": "app/api/question-sets/route.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/profile/me/route": "app/api/profile/me/route.js",
+  "/profile/page": "app/profile/page.js",
   "/page": "app/page.js",
-  "/question-bank/create/page": "app/question-bank/create/page.js",
-  "/question-bank/[setId]/page": "app/question-bank/[setId]/page.js",
-  "/api/leaderboard/route": "app/api/leaderboard/route.js",
-  "/api/profile/me/route": "app/api/profile/me/route.js"
+  "/api/profile/me/history/route": "app/api/profile/me/history/route.js",
+  "/api/leaderboard/route": "app/api/leaderboard/route.js"
 }

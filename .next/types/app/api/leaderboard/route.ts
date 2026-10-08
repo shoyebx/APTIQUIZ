@@ -1,4 +1,4 @@
-// File: /Users/apple/APTIQUIZ/app/api/leaderboard/route.ts
+// File: /Users/sohailansari/Documents/SIH/APTIQUIZ/app/api/leaderboard/route.ts
 import * as entry from '../../../../../app/api/leaderboard/route.js'
 import type { NextRequest } from 'next/server.js'
 
