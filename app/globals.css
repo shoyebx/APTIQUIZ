@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #edf3ff;
+  --foreground: #0f172a;
+  --surface: rgba(255, 255, 255, 0.78);
+  --card: #ffffff;
+  --muted: #475569;
+  --line: rgba(148, 163, 184, 0.22);
+  --brand: #4f46e5;
+  --brand-soft: rgba(79, 70, 229, 0.12);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(79, 70, 229, 0.34);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(79, 70, 229, 0.2);
+}
+
+.card {
+  background: rgba(13, 29, 45, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 25px 55px rgba(2, 6, 23, 0.45);
+}
+
+.answer-button {
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.answer-button:hover {
+  transform: translateY(-1px);
+}
+
+.answer-button:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.8);
+  outline-offset: 2px;
+}
+
+@keyframes host-player-entry {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.host-player-enter {
+  animation: host-player-entry 280ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-player-enter {
+    animation: none;
+  }
+}
