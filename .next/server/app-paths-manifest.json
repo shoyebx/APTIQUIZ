@@ -1,4 +1,5 @@
 {
+  "/api/profile/me/route": "app/api/profile/me/route.js",
   "/page": "app/page.js",
-  "/api/profile/me/route": "app/api/profile/me/route.js"
+  "/api/leaderboard/route": "app/api/leaderboard/route.js"
 }

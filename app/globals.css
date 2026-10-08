@@ -87,8 +87,25 @@ a:focus-visible {
   animation: host-player-entry 280ms ease-out both;
 }
 
+@keyframes leaderboard-row-entry {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.leaderboard-row-enter {
+  animation: leaderboard-row-entry 260ms ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .host-player-enter {
+  .host-player-enter,
+  .leaderboard-row-enter {
     animation: none;
   }
 }

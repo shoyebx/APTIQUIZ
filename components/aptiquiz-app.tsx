@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import HostQuizConsole, { type HostRoundResult, type HostRoundSnapshot, type HostRoom } from '@/components/host-quiz-console';
 import { readProfileToken, useProfile } from '@/components/profile-context';
+import TopCompetitors from '@/components/top-competitors';
 import {
   AlertTriangle,
   ArrowRight,
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'Home', href: '#home' },
   { label: 'How It Works', href: '#how-it-works' },
   { label: 'Features', href: '#features' },
+  { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'About', href: '#about' },
 ];
 
@@ -72,10 +74,10 @@ const steps = [
 ];
 
 const stats = [
-  { value: '50+', label: 'Players per room' },
-  { value: 'Real-Time', label: 'Competition' },
-  { value: 'Speed +', label: 'Accuracy scoring' },
-  { value: 'Live', label: 'Leaderboard' },
+  { value: 'Live', label: 'multiplayer rooms' },
+  { value: 'Server', label: 'authoritative scoring' },
+  { value: 'Speed +', label: 'accuracy scoring' },
+  { value: 'Global', label: 'competitor rankings' },
 ];
 
 const useCases = [
@@ -94,13 +96,6 @@ const useCases = [
     title: 'Friends & Teams',
     text: 'Create private quiz rooms and compete together.',
   },
-];
-
-const sampleLeaderboard = [
-  { rank: 1, name: 'Rahul', score: 4850, delta: '+2' },
-  { rank: 2, name: 'Shoyeb', score: 4620, delta: '+1' },
-  { rank: 3, name: 'Aman', score: 4380, delta: '-1' },
-  { rank: 4, name: 'Priya', score: 4205, delta: '—' },
 ];
 
 type Player = {
@@ -492,15 +487,15 @@ export default function AptiQuizApp() {
           <section id="home" className="pb-14 pt-4 lg:pb-16">
             <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr]">
               <div>
-                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-700">
+                <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-indigo-300/20 bg-indigo-300/[0.08] px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-100">
                   <Sparkles className="h-3.5 w-3.5" />
-                  Real-Time Multiplayer Aptitude Challenge
+                  Real-Time Multiplayer Aptitude
                 </div>
-                <h1 className="max-w-xl text-4xl font-black tracking-[-0.06em] text-slate-950 sm:text-5xl lg:text-6xl">
-                  Think Fast. <span className="text-indigo-600">Answer Smart.</span> Rank Higher.
+                <h1 className="max-w-xl text-4xl font-black tracking-[-0.06em] text-white sm:text-5xl lg:text-6xl">
+                  Think Fast. <span className="text-indigo-300">Answer Smart.</span> Rank Higher.
                 </h1>
-                <p className="mt-5 max-w-xl text-lg leading-8 text-slate-600">
-                  Challenge your friends, classmates, and competitors in real-time aptitude quizzes. Test your speed, accuracy, and knowledge.
+                <p className="mt-5 max-w-xl text-lg leading-8 text-slate-300">
+                  Challenge your friends, classmates, and competitors in real-time aptitude competitions.
                 </p>
 
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -517,80 +512,18 @@ export default function AptiQuizApp() {
                     onClick={() => handleNavAction('join')}
                     className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white/70 px-6 py-3.5 text-sm font-semibold text-slate-900 transition hover:border-slate-400 hover:bg-white"
                   >
-                    Join with Code
+                    Join Quiz
                   </button>
                 </div>
 
-                <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-600">
+                <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-slate-300">
                   <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> No account required to join</span>
                   <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Real-time multiplayer</span>
                   <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-500" /> Fair scoring</span>
                 </div>
               </div>
 
-              <div className="relative">
-                <div className="absolute -left-6 top-12 hidden h-24 w-24 rounded-full bg-indigo-300/30 blur-2xl md:block" />
-                <div className="absolute -right-7 bottom-10 hidden h-24 w-24 rounded-full bg-cyan-300/30 blur-2xl md:block" />
-
-                <div className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-white/80 p-5 shadow-[0_36px_80px_rgba(15,23,42,0.12)] backdrop-blur-sm">
-                  <div className="mb-5 flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Question 08</p>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                      LIVE
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-600">Quantitative Aptitude</p>
-                    <h3 className="text-xl font-bold leading-7 text-slate-900">A train travels 180 km in 3 hours. What is its average speed?</h3>
-                  </div>
-
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {['50 km/h', '60 km/h', '70 km/h', '75 km/h'].map((option, index) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
-                          index === 1 ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}
-                        `}
-                      >
-                        <span>{String.fromCharCode(65 + index)}.</span>
-                        <span className="flex-1 pl-3">{option}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                      <TimerReset className="h-4 w-4 text-indigo-600" />
-                      12s
-                    </div>
-                    <div className="flex items-center gap-3 text-sm text-slate-600">
-                      <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-slate-500" /> 24 players</span>
-                      <span className="inline-flex items-center gap-1.5"><Trophy className="h-4 w-4 text-amber-500" /> Score 320</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-950 p-3 text-white">
-                    <div className="mb-3 flex items-center justify-between">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Leaderboard</p>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">+12</span>
-                    </div>
-                    {sampleLeaderboard.map((entry) => (
-                      <div key={entry.name} className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-white">#{entry.rank}</span>
-                          <span className="text-slate-200">{entry.name}</span>
-                        </div>
-                        <span className="text-indigo-300">{entry.score}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <div className="relative"><TopCompetitors /></div>
             </div>
           </section>
 
@@ -794,71 +727,6 @@ export default function AptiQuizApp() {
               </div>
             </section>
           )}
-
-          <section id="competition" className="pb-16">
-            <div className="mb-8 text-center">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-600">Competition preview</p>
-              <h2 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-950 sm:text-4xl">Competition, in real time.</h2>
-            </div>
-
-            <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_28px_80px_rgba(15,23,42,0.08)]">
-                <div className="mb-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Live Room</p>
-                    <h3 className="mt-2 text-2xl font-black text-slate-900">AptiBattle #104</h3>
-                  </div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                    24 players online
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Accuracy</p>
-                    <p className="mt-2 text-2xl font-black text-slate-900">82%</p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Speed score</p>
-                    <p className="mt-2 text-2xl font-black text-slate-900">91</p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Rank</p>
-                    <p className="mt-2 text-2xl font-black text-slate-900">#2</p>
-                  </div>
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-700">Time left</p>
-                    <p className="text-sm font-bold text-indigo-700">12s</p>
-                  </div>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
-                    <div className="h-full w-[62%] rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[30px] border border-slate-200 bg-slate-950 p-6 text-white shadow-[0_28px_80px_rgba(15,23,42,0.16)]">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leaderboard</p>
-                <div className="mt-4 space-y-3">
-                  {sampleLeaderboard.map((entry) => (
-                    <div key={entry.name} className="flex items-center justify-between rounded-2xl border border-slate-800 bg-white/5 px-3 py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-sm font-bold text-slate-300">#{entry.rank}</span>
-                        <span className="font-semibold text-white">{entry.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-indigo-300">{entry.score}</span>
-                        <span className="text-xs text-emerald-400">{entry.delta}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
 
           <section id="features" className="pb-16">
             <div className="mb-8 text-center">

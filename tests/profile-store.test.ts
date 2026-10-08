@@ -88,4 +88,41 @@ describe('persistent profiles', () => {
     expect(await store.getProfileByToken(token)).toBeNull();
     expect(await store.getPublicProfileById(profile.id)).toBeNull();
   });
+
+  it('ranks completed public competitors by level, XP, then best score', async () => {
+    const highLevel = await store.createProfile({ fullName: 'High Level', username: 'high_level', profileVisibility: 'public' });
+    const highXp = await store.createProfile({ fullName: 'High XP', username: 'high_xp', profileVisibility: 'public' });
+    const highScore = await store.createProfile({ fullName: 'High Score', username: 'high_score', profileVisibility: 'public' });
+    const privateProfile = await store.createProfile({ fullName: 'Private Player', username: 'private_player' });
+    const levelTwoAnswers = Array.from({ length: 30 }, (_, index) => ({
+      questionId: `level-${index}`,
+      topic: 'Reasoning',
+      correct: true,
+      responseMs: 1000,
+      points: 10,
+    }));
+    const tieAnswers = Array.from({ length: 2 }, (_, index) => ({
+      questionId: `tie-${index}`,
+      topic: 'Reasoning',
+      correct: true,
+      responseMs: 1000,
+      points: 10,
+    }));
+
+    await store.recordCompletedQuizzes([
+      { profileId: highLevel.profile.id, quiz: { id: 'level', roomCode: 'L1', rank: 4, score: 400, answers: levelTwoAnswers } },
+      { profileId: highXp.profile.id, quiz: { id: 'xp', roomCode: 'X1', rank: 2, score: 300, answers: tieAnswers } },
+      { profileId: highScore.profile.id, quiz: { id: 'score', roomCode: 'S1', rank: 2, score: 900, answers: tieAnswers } },
+      { profileId: privateProfile.profile.id, quiz: { id: 'private', roomCode: 'P1', rank: 1, score: 1000, answers: tieAnswers } },
+    ]);
+
+    const leaderboard = await store.getLeaderboardPage({ token: highLevel.token, pageSize: 5 });
+    expect(leaderboard.items.map((entry) => entry.username)).toEqual(['high_level', 'high_score', 'high_xp']);
+    expect(leaderboard.items[0]).toMatchObject({ rank: 1, level: 2, score: 400 });
+    expect(leaderboard.currentUser).toMatchObject({ rank: 1, level: 2 });
+    expect(leaderboard.items).not.toContainEqual(expect.objectContaining({ username: 'private_player' }));
+
+    const privateLeaderboard = await store.getLeaderboardPage({ token: privateProfile.token });
+    expect(privateLeaderboard.currentUser).toMatchObject({ rank: 2 });
+  });
 });
