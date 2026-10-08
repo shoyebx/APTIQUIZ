@@ -44,6 +44,8 @@ export type HostQuestion = {
   options: { id: string; text: string }[];
   correctOptionId?: string;
   explanation?: string;
+  image?: { url: string; altText?: string } | null;
+  table?: { columns: string[]; rows: string[][] } | null;
 };
 
 export type HostRoundResult = {
@@ -71,6 +73,9 @@ export type HostRoom = {
   questionEndsAt?: number | null;
   questionIndex?: number;
   totalQuestions?: number;
+  questionSetId?: string | null;
+  questionSetName?: string;
+  answerDistribution?: Array<{ optionId: string; count: number }>;
   players: HostPlayer[];
   currentQuestion?: HostQuestion | null;
   leaderboard: Array<{ id: string; name: string; score: number; rank: number; college?: string; answered?: boolean; publicProfile?: HostPlayer['publicProfile'] }>;
@@ -84,9 +89,21 @@ type HostQuizConsoleProps = {
   roundHistory: HostRoundSnapshot[];
   error: string;
   hostProfile: Pick<UserProfile, 'avatar' | 'username'> | null;
+  profileToken: string | null;
   onStart: () => void;
   onLeave: () => void;
   onStartNewQuiz: () => void;
+  onSelectQuestionSet: (questionSetId: string | null) => void;
+};
+
+type HostQuestionSetSummary = {
+  id: string;
+  name: string;
+  description: string;
+  questionCount: number;
+  topics: string[];
+  difficultyDistribution: Record<string, number>;
+  status: string;
 };
 
 const connectionStyles = {
@@ -122,9 +139,11 @@ export default function HostQuizConsole({
   roundHistory,
   error,
   hostProfile,
+  profileToken,
   onStart,
   onLeave,
   onStartNewQuiz,
+  onSelectQuestionSet,
 }: HostQuizConsoleProps) {
   const [joinUrl, setJoinUrl] = useState('');
   const [toast, setToast] = useState('');
@@ -132,6 +151,10 @@ export default function HostQuizConsole({
   const [dialog, setDialog] = useState<'start' | 'leave' | 'qr' | null>(null);
   const [rankingsOpen, setRankingsOpen] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [questionSets, setQuestionSets] = useState<HostQuestionSetSummary[]>([]);
+  const [selectedQuestionSetId, setSelectedQuestionSetId] = useState('');
+  const [loadingQuestionSets, setLoadingQuestionSets] = useState(false);
+  const [questionSetError, setQuestionSetError] = useState('');
   const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -142,6 +165,25 @@ export default function HostQuizConsole({
   useEffect(() => {
     if (room.state !== 'WAITING' || error) setStarting(false);
   }, [room.state, error]);
+
+  useEffect(() => {
+    setSelectedQuestionSetId(room.questionSetId || '');
+  }, [room.questionSetId]);
+
+  useEffect(() => {
+    if (!profileToken || room.state !== 'WAITING') return;
+    let active = true;
+    setLoadingQuestionSets(true);
+    fetch('/api/question-sets?status=ready', { headers: { Authorization: `Bearer ${profileToken}` }, cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Could not load ready question sets.');
+        return response.json();
+      })
+      .then((data: { items: HostQuestionSetSummary[] }) => { if (active) setQuestionSets(data.items); })
+      .catch((loadError) => { if (active) setQuestionSetError(loadError instanceof Error ? loadError.message : 'Could not load question sets.'); })
+      .finally(() => { if (active) setLoadingQuestionSets(false); });
+    return () => { active = false; };
+  }, [profileToken, room.state]);
 
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -155,7 +197,7 @@ export default function HostQuizConsole({
   const questionOptions = room.currentQuestion?.options ?? [];
   const optionCounts = questionOptions.map((option) => ({
     ...option,
-    count: participants.filter((player) => player.lastAnswer?.optionId === option.id).length,
+    count: room.answerDistribution?.find((entry) => entry.optionId === option.id)?.count || 0,
   }));
   const maxOptionCount = Math.max(1, ...optionCounts.map((option) => option.count));
   const roundResults = room.questionResults ?? [];
@@ -167,6 +209,7 @@ export default function HostQuizConsole({
   const roundAccuracy = roundParticipants.length
     ? Math.round((roundParticipants.filter((result) => result.correct).length / roundParticipants.length) * 100)
     : 0;
+  const selectedSet = questionSets.find((questionSet) => questionSet.id === selectedQuestionSetId) || null;
 
   const sessionStats = useMemo(() => {
     const byPlayer = new Map<string, { correct: number; participated: number; responseMs: number; responseCount: number }>();
@@ -453,14 +496,19 @@ export default function HostQuizConsole({
 
             <aside className="space-y-5">
               <section className="rounded-[26px] border border-white/[0.08] bg-[#111a2a] p-5 sm:p-6">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-200">Quiz settings</p><h2 className="mt-1 text-lg font-bold text-white">Server quiz preset</h2></div><ShieldCheck className="h-5 w-5 text-indigo-200" /></div>
-                <div className="mt-5 divide-y divide-white/[0.06]">{[
-                  { label: 'Question set', value: totalQuestions ? `${totalQuestions} questions` : 'Loading' },
-                  { label: 'Category', value: 'Aptitude mix' },
-                  { label: 'Time limit', value: room.currentQuestion?.timeLimitMs ? `${Math.round(room.currentQuestion.timeLimitMs / 1000)} sec · current` : 'Per-question timer' },
-                  { label: 'Scoring', value: 'Speed + accuracy' },
-                ].map((item) => <div key={item.label} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><span className="text-xs text-slate-400">{item.label}</span><span className="text-right text-xs font-semibold text-slate-200">{item.value}</span></div>)}</div>
-                <p className="mt-4 border-t border-white/[0.06] pt-3 text-[10px] leading-4 text-slate-500">Quiz settings are fixed by the current server preset; this room does not support editing them.</p>
+                <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-indigo-200">Quiz content</p><h2 className="mt-1 text-lg font-bold text-white">Question set</h2></div><ShieldCheck className="h-5 w-5 text-indigo-200" /></div>
+                {room.state === 'WAITING' ? <>
+                  <label className="mt-4 block text-xs font-semibold text-slate-300">Ready sets<select value={selectedQuestionSetId} onChange={(event) => setSelectedQuestionSetId(event.target.value)} disabled={loadingQuestionSets || !questionSets.length} className="mt-2 w-full rounded-xl border border-white/10 bg-[#0b1321] px-3 py-2.5 text-xs text-white disabled:opacity-50"><option value="">Built-in aptitude set · 5 questions</option>{questionSets.map((questionSet) => <option key={questionSet.id} value={questionSet.id}>{questionSet.name || 'Untitled'} · {questionSet.questionCount} questions</option>)}</select></label>
+                  {selectedSet ? <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.03] p-3"><p className="text-sm font-semibold text-white">{selectedSet.name}</p><p className="mt-1 text-[10px] leading-4 text-slate-400">{selectedSet.questionCount} questions · {selectedSet.topics.join(' · ') || 'Topics not set'}</p><p className="mt-1 text-[10px] text-slate-500">{Object.entries(selectedSet.difficultyDistribution).map(([difficulty, count]) => `${count} ${difficulty}`).join(' · ')}</p></div> : <div className="mt-4 divide-y divide-white/[0.06]">{[
+                    { label: 'Question set', value: room.questionSetName || 'Built-in aptitude set' },
+                    { label: 'Questions', value: `${totalQuestions} questions` },
+                    { label: 'Scoring', value: 'Speed + accuracy' },
+                  ].map((item) => <div key={item.label} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"><span className="text-xs text-slate-400">{item.label}</span><span className="text-right text-xs font-semibold text-slate-200">{item.value}</span></div>)}</div>}
+                  {loadingQuestionSets && <p className="mt-2 text-[10px] text-slate-500">Loading ready sets…</p>}
+                  {questionSetError && <p className="mt-2 text-[10px] text-rose-200">{questionSetError}</p>}
+                  <div className="mt-4 flex items-center justify-between gap-2"><a href="/question-bank" className="text-[10px] font-semibold text-indigo-200 hover:text-white">Manage question bank</a><button type="button" disabled={busy || selectedQuestionSetId === (room.questionSetId || '')} onClick={() => onSelectQuestionSet(selectedQuestionSetId || null)} className="rounded-lg bg-indigo-500 px-3 py-2 text-[10px] font-bold text-white hover:bg-indigo-400 disabled:opacity-40">{selectedQuestionSetId ? 'Use this set' : 'Use built-in set'}</button></div>
+                </> : <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.03] p-3"><p className="text-sm font-semibold text-white">{room.questionSetName || 'Built-in aptitude set'}</p><p className="mt-1 text-xs text-slate-400">{totalQuestions} questions · snapshot locked for this competition</p><p className="mt-2 text-[10px] text-slate-500">Editing the source set will not change this running quiz.</p></div>}
+                <p className="mt-4 border-t border-white/[0.06] pt-3 text-[10px] leading-4 text-slate-500">Scoring and question timing remain controlled by the game server.</p>
               </section>
 
               {room.state === 'WAITING' && (

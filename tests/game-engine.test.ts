@@ -46,4 +46,45 @@ describe('game room engine', () => {
     expect(snapshot.code).toBe(room.code);
     expect(snapshot.state).toBe('WAITING');
   });
+
+  it('keeps answer keys and individual responses private in live question snapshots', () => {
+    const room = createRoom({ hostName: 'Host One' });
+    const playerId = room.players[0].id;
+    room.currentQuestion = {
+      id: 'media-question',
+      text: 'Read the table.',
+      options: [
+        { id: 'A', text: '10' },
+        { id: 'B', text: '20' },
+        { id: 'C', text: '30' },
+        { id: 'D', text: '40' },
+      ],
+      correctOptionId: 'B',
+      topic: 'Data Interpretation',
+      difficulty: 'Medium',
+      timeLimitMs: 20000,
+      image: { id: 'image-1', url: '/api/question-images/image-1', altText: 'Chart' },
+      table: { columns: ['Year', 'Value'], rows: [['2025', '20']] },
+    };
+    room.questionState = 'QUESTION_ACTIVE';
+    room.questionStartedAt = Date.now() - 1000;
+    room.questionEndsAt = Date.now() + 19000;
+    room.answers = {};
+
+    expect(validateAnswer({ room, playerId, questionId: 'media-question', optionId: 'B' }).ok).toBe(true);
+    const snapshot = getRoomState(room);
+
+    expect(snapshot.currentQuestion).toMatchObject({
+      image: { url: '/api/question-images/image-1', altText: 'Chart' },
+      table: { columns: ['Year', 'Value'], rows: [['2025', '20']] },
+    });
+    expect(snapshot.currentQuestion).not.toHaveProperty('correctOptionId');
+    expect(snapshot.players[0].lastAnswer).toBeNull();
+    expect(snapshot.answerDistribution).toEqual([
+      { optionId: 'A', count: 0 },
+      { optionId: 'B', count: 1 },
+      { optionId: 'C', count: 0 },
+      { optionId: 'D', count: 0 },
+    ]);
+  });
 });

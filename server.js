@@ -4,6 +4,7 @@ const next = require('next');
 const { Server } = require('socket.io');
 const { createRoom, getRoomState, joinRoom, validateAnswer } = require('./lib/game-engine');
 const { findProfileByToken, getPublicProfilesByIds, recordCompletedQuizzes } = require('./lib/profile-store');
+const { getReadyQuestionSet } = require('./lib/question-bank-store');
 
 const port = Number(process.env.PORT || 3000);
 const dev = process.env.NODE_ENV !== 'production';
@@ -29,6 +30,8 @@ async function getRoomSnapshot(room) {
   const publicProfiles = new Map(room.players.map((player) => [player.id, player.publicProfile || null]));
   return {
     ...snapshot,
+    questionSetId: room.questionSetId || null,
+    questionSetName: room.questionSetName || 'Built-in aptitude set',
     players: snapshot.players.map((player) => ({ ...player, publicProfile: publicProfiles.get(player.id) || null })),
     leaderboard: snapshot.leaderboard.map((entry) => ({ ...entry, publicProfile: publicProfiles.get(entry.id) || null })),
   };
@@ -124,9 +127,10 @@ async function beginQuestion(room) {
   });
 
   await broadcastRoom(room);
+  const snapshot = await getRoomSnapshot(room);
   globalThis.aptiQuizIo.to(room.code).emit('question_started', {
-    room: await getRoomSnapshot(room),
-    question: room.currentQuestion,
+    room: snapshot,
+    question: snapshot.currentQuestion,
   });
 
   if (room.questionTimer) {
@@ -324,6 +328,46 @@ app.prepare().then(() => {
       });
 
       await beginQuestion(room);
+    });
+
+    socket.on('host_select_question_set', async ({ roomCode, questionSetId, profileToken }) => {
+      const room = getRoomByCode(roomCode);
+      if (!room) {
+        socket.emit('error', sanitizeError('Room not found.'));
+        return;
+      }
+      if (socket.data.playerId !== room.hostId || room.state !== 'WAITING') {
+        socket.emit('error', sanitizeError('Only the host can select a set while the lobby is waiting.'));
+        return;
+      }
+
+      try {
+        if (!questionSetId) {
+          room.questions = createRoom({ hostName: room.hostName }).questions;
+          room.questionIndex = 0;
+          room.questionResults = null;
+          room.questionSetId = null;
+          room.questionSetName = 'Built-in aptitude set';
+          await broadcastRoom(room);
+          socket.emit('question_set_selected', { questionSetId: null, questionSetName: room.questionSetName });
+          return;
+        }
+        const profile = await resolveProfile(profileToken);
+        if (!profile || (room.players[0].profileId && room.players[0].profileId !== profile.id)) {
+          socket.emit('error', sanitizeError('This host session does not own the selected question set.'));
+          return;
+        }
+        const selected = await getReadyQuestionSet(profileToken, questionSetId);
+        room.questions = selected.questions.map((question) => JSON.parse(JSON.stringify(question)));
+        room.questionIndex = 0;
+        room.questionResults = null;
+        room.questionSetId = selected.id;
+        room.questionSetName = selected.name;
+        await broadcastRoom(room);
+        socket.emit('question_set_selected', { questionSetId: selected.id, questionSetName: selected.name });
+      } catch (error) {
+        socket.emit('error', sanitizeError(error.message));
+      }
     });
 
     socket.on('request_current_state', async ({ roomCode }) => {

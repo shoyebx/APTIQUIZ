@@ -29,6 +29,7 @@ const navItems = [
   { label: 'Home', href: '#home' },
   { label: 'How It Works', href: '#how-it-works' },
   { label: 'Features', href: '#features' },
+  { label: 'Question Bank', href: '/question-bank' },
   { label: 'Leaderboard', href: '/leaderboard' },
   { label: 'About', href: '#about' },
 ];
@@ -120,6 +121,8 @@ type Question = {
   options: { id: string; text: string }[];
   correctOptionId?: string;
   explanation?: string;
+  image?: { url: string; altText?: string } | null;
+  table?: { columns: string[]; rows: string[][] } | null;
 };
 
 type RoomSnapshot = {
@@ -132,6 +135,9 @@ type RoomSnapshot = {
   questionEndsAt?: number | null;
   questionIndex?: number;
   totalQuestions?: number;
+  questionSetId?: string | null;
+  questionSetName?: string;
+  answerDistribution?: Array<{ optionId: string; count: number }>;
   players: Player[];
   currentQuestion?: Question | null;
   leaderboard: Array<{ id: string; name: string; score: number; rank: number; college?: string; publicProfile?: Player['publicProfile'] }>;
@@ -335,6 +341,16 @@ export default function AptiQuizApp() {
     socketRef.current?.emit('host_start_game', { roomCode: roomState.code });
   };
 
+  const handleSelectQuestionSet = (questionSetId: string | null) => {
+    if (!roomState?.code || roomState.state !== 'WAITING' || !socketReady) return;
+    setError('');
+    socketRef.current?.emit('host_select_question_set', {
+      roomCode: roomState.code,
+      questionSetId,
+      profileToken: token || readProfileToken(),
+    });
+  };
+
   const handleLeaveHostRoom = () => {
     window.localStorage.removeItem('aptiquiz-session');
     setRoomState(null);
@@ -387,6 +403,7 @@ export default function AptiQuizApp() {
       <HostQuizConsole
         room={roomState as HostRoom}
         hostProfile={profile}
+        profileToken={token || readProfileToken()}
         connectionState={connectionState}
         remainingMs={remainingMs}
         roundHistory={roundHistory}
@@ -394,6 +411,7 @@ export default function AptiQuizApp() {
         onStart={handleStartGame}
         onLeave={handleLeaveHostRoom}
         onStartNewQuiz={handleStartNewQuiz}
+        onSelectQuestionSet={handleSelectQuestionSet}
       />
     );
   }
@@ -671,6 +689,8 @@ export default function AptiQuizApp() {
                       <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-600">{activeQuestion.topic}</p>
                         <h4 className="mt-2 text-xl font-bold text-slate-900">{activeQuestion.text}</h4>
+                        {activeQuestion.image && <img src={activeQuestion.image.url} alt={activeQuestion.image.altText || ''} className="mt-4 max-h-80 max-w-full rounded-xl border border-slate-200 object-contain" />}
+                        {activeQuestion.table && <div className="mt-4 max-w-full overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-left text-sm"><thead><tr>{activeQuestion.table.columns.map((column, index) => <th key={index} className="border-b bg-slate-50 px-3 py-2 font-semibold">{column}</th>)}</tr></thead><tbody>{activeQuestion.table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-slate-100 px-3 py-2">{cell}</td>)}</tr>)}</tbody></table></div>}
                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
                           {activeQuestion.options.map((option: { id: string; text: string }) => {
                             const isSelected = selectedOptionId === option.id || currentPlayer?.lastAnswer?.optionId === option.id;

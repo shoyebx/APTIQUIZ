@@ -5,8 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 type ProfileStore = typeof import('../lib/profile-store');
+type QuestionBankStore = typeof import('../lib/question-bank-store');
 
 let store: ProfileStore;
+let questionBank: QuestionBankStore;
 let testDirectory: string;
 let originalDataDirectory: string | undefined;
 
@@ -15,8 +17,11 @@ beforeEach(async () => {
   testDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'aptiquiz-profile-test-'));
   process.env.APTIQUIZ_DATA_DIR = testDirectory;
   const profileStorePath = require.resolve('../lib/profile-store');
+  const questionBankStorePath = require.resolve('../lib/question-bank-store');
   delete require.cache[profileStorePath];
+  delete require.cache[questionBankStorePath];
   store = require('../lib/profile-store');
+  questionBank = require('../lib/question-bank-store');
 });
 
 afterEach(() => {
@@ -124,5 +129,52 @@ describe('persistent profiles', () => {
 
     const privateLeaderboard = await store.getLeaderboardPage({ token: privateProfile.token });
     expect(privateLeaderboard.currentUser).toMatchObject({ rank: 2 });
+  });
+
+  it('owns question sets and preserves independent, ordered ready snapshots', async () => {
+    const { token } = await createTestProfile('question_owner');
+    const other = await createTestProfile('other_owner');
+    const draft = await questionBank.createQuestionSet(token, { name: 'Placement Round', description: 'First pass' });
+    expect(draft).toMatchObject({ status: 'draft', questionCount: 0, readiness: { ready: false } });
+    await expect(questionBank.getQuestionSet(other.token, draft.id)).resolves.toBeNull();
+
+    const first = await questionBank.addQuestion(token, draft.id, {
+      text: 'How much is 2 + 2?',
+      options: ['3', '4', '5', '6'],
+      correctOptionId: 'B',
+      topic: 'Quantitative Aptitude',
+      difficulty: 'Easy',
+      explanation: 'Two plus two is four.',
+    });
+    const second = await questionBank.addQuestion(token, draft.id, {
+      text: 'Choose the practical synonym.',
+      options: ['Abstract', 'Practical', 'Vague', 'Rare'],
+      correctOptionId: 'B',
+      topic: 'Verbal Ability',
+      difficulty: 'Medium',
+    });
+    const copy = await questionBank.duplicateQuestion(token, draft.id, first.id);
+    await questionBank.reorderQuestions(token, draft.id, [second.id, copy.id, first.id]);
+    const ready = await questionBank.updateQuestionSet(token, draft.id, { status: 'ready' });
+    expect(ready).toMatchObject({ status: 'ready', readiness: { ready: true } });
+
+    const snapshot = await questionBank.getReadyQuestionSet(token, draft.id);
+    expect(snapshot.questions.map((question) => question.text)).toEqual([
+      second.text,
+      first.text,
+      first.text,
+    ]);
+    expect(new Set(snapshot.questions.map((question) => question.id)).size).toBe(3);
+    await questionBank.updateQuestion(token, draft.id, first.id, {
+      text: 'Edited original question.',
+      options: ['A', 'B', 'C', 'D'],
+      correctOptionId: 'A',
+      topic: 'Logical Reasoning',
+      difficulty: 'Hard',
+    });
+    const updatedSnapshot = await questionBank.getReadyQuestionSet(token, draft.id).catch(() => null);
+    expect(updatedSnapshot).toBeNull();
+    const listed = await questionBank.listQuestionSets(token, { search: 'Edited original' });
+    expect(listed).toHaveLength(1);
   });
 });
