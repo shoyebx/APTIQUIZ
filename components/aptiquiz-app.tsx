@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import HostQuizConsole, { type HostRoundResult, type HostRoundSnapshot, type HostRoom } from '@/components/host-quiz-console';
+import { readProfileToken, useProfile } from '@/components/profile-context';
 import {
   AlertTriangle,
   ArrowRight,
@@ -112,6 +113,7 @@ type Player = {
   connected: boolean;
   lastAnswer?: { optionId?: string; points?: number; responseMs?: number; correct?: boolean } | null;
   isHost?: boolean;
+  publicProfile?: { fullName: string; username: string; avatarUrl: string | null; college: string; course: string; level: number; levelName: string } | null;
 };
 
 type Question = {
@@ -137,7 +139,7 @@ type RoomSnapshot = {
   totalQuestions?: number;
   players: Player[];
   currentQuestion?: Question | null;
-  leaderboard: Array<{ id: string; name: string; score: number; rank: number; college?: string }>; 
+  leaderboard: Array<{ id: string; name: string; score: number; rank: number; college?: string; publicProfile?: Player['publicProfile'] }>;
   questionResults?: Array<{ playerId: string; name: string; score: number; correct: boolean; points: number; responseMs?: number | null; selectedOption?: string | null }> | null;
 };
 
@@ -161,6 +163,7 @@ function formatTime(ms: number) {
 }
 
 export default function AptiQuizApp() {
+  const { profile, token } = useProfile();
   const socketRef = useRef<Socket | null>(null);
   const hostInputRef = useRef<HTMLInputElement | null>(null);
   const joinInputRef = useRef<HTMLInputElement | null>(null);
@@ -191,6 +194,7 @@ export default function AptiQuizApp() {
           roomCode: state.roomCode,
           playerId: state.playerId,
           name: state.name,
+          profileToken: readProfileToken(),
         });
       }
     };
@@ -218,6 +222,13 @@ export default function AptiQuizApp() {
       setJoinCode(roomCode);
       setLastMessage(`Room ${roomCode} is ready.`);
       saveSession({ roomCode, playerId: room.hostId, name: room.hostName || 'Host' });
+    });
+
+    socket.on('joined_room', ({ room, playerId }: { room: RoomSnapshot; playerId: string }) => {
+      setRoomState(room);
+      setCurrentPlayerId(playerId);
+      const player = room.players.find((entry) => entry.id === playerId);
+      saveSession({ roomCode: room.code, playerId, name: player?.name || 'Player' });
     });
 
     socket.on('room_state', (payload: RoomSnapshot) => {
@@ -297,32 +308,27 @@ export default function AptiQuizApp() {
 
   const handleCreateRoom = () => {
     setError('');
-    if (!hostName.trim()) {
+    const name = profile?.fullName || hostName.trim();
+    if (!name) {
       setError('Enter a host name to create a room.');
       return;
     }
-    socketRef.current?.emit('host_create_room', { hostName: hostName.trim() });
+    socketRef.current?.emit('host_create_room', { hostName: name, profileToken: token || readProfileToken() });
     document.getElementById('quick-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleJoinRoom = () => {
     setError('');
-    if (!joinCode.trim() || !playerName.trim()) {
+    if (!joinCode.trim() || (!profile && !playerName.trim())) {
       setError('Both room code and player name are required.');
       return;
     }
 
     socketRef.current?.emit('join_room', {
       roomCode: joinCode.trim().toUpperCase(),
-      name: playerName.trim(),
-      college: playerCollege.trim(),
-    });
-
-    saveSession({
-      roomCode: joinCode.trim().toUpperCase(),
-      playerId: currentPlayerId || 'guest-user',
-      name: playerName.trim(),
-      college: playerCollege.trim(),
+      name: profile?.fullName || playerName.trim(),
+      college: profile?.college || playerCollege.trim(),
+      profileToken: token || readProfileToken(),
     });
 
     document.getElementById('quick-action')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -355,7 +361,7 @@ export default function AptiQuizApp() {
     setCurrentPlayerId(null);
     setRoundHistory([]);
     window.localStorage.removeItem('aptiquiz-session');
-    socket.once('connect', () => socket.emit('host_create_room', { hostName: nextHostName }));
+    socket.once('connect', () => socket.emit('host_create_room', { hostName: nextHostName, profileToken: token || readProfileToken() }));
     socket.disconnect();
     socket.connect();
   };
@@ -385,6 +391,7 @@ export default function AptiQuizApp() {
     return (
       <HostQuizConsole
         room={roomState as HostRoom}
+        hostProfile={profile}
         connectionState={connectionState}
         remainingMs={remainingMs}
         roundHistory={roundHistory}
@@ -423,6 +430,10 @@ export default function AptiQuizApp() {
                 <span className={`h-2 w-2 rounded-full ${socketReady ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                 {socketReady ? 'Live server' : 'Connecting'}
               </div>
+              <a href="/profile" className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-white transition hover:border-slate-500">
+                <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-indigo-400/20 text-[10px] font-bold text-indigo-100">{profile?.avatar ? <img src={profile.avatar} alt="" className="h-full w-full object-cover" /> : profile?.fullName.slice(0, 1).toUpperCase() || 'P'}</span>
+                {profile?.fullName || 'Profile'}
+              </a>
               <button
                 onClick={() => handleNavAction('join')}
                 className="rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm font-semibold text-white transition hover:border-slate-500 hover:bg-slate-900"
@@ -452,6 +463,7 @@ export default function AptiQuizApp() {
           {mobileNavOpen && (
             <div className="border-t border-white/10 bg-slate-950 px-4 py-4 md:hidden">
               <div className="flex flex-col gap-3">
+                <a href="/profile" onClick={() => setMobileNavOpen(false)} className="rounded-xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-900">{profile?.fullName || 'Player Profile'}</a>
                 {navItems.map((item) => (
                   <a key={item.label} href={item.href} className="rounded-xl px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-900" onClick={() => setMobileNavOpen(false)}>
                     {item.label}
@@ -706,9 +718,12 @@ export default function AptiQuizApp() {
                         <div className="space-y-2">
                           {roomState.players.map((player: Player) => (
                             <div key={player.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                              <div>
-                                <p className="font-semibold text-slate-900">{player.name}</p>
-                                <p className="text-xs text-slate-500">{player.college || 'College not set'}</p>
+                              <div className="flex min-w-0 items-center gap-3">
+                                <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">{player.publicProfile?.avatarUrl ? <img src={player.publicProfile.avatarUrl} alt="" className="h-full w-full object-cover" /> : (player.publicProfile?.fullName || player.name).slice(0, 1).toUpperCase()}</span>
+                                <div className="min-w-0">
+                                  {player.publicProfile?.username ? <a href={`/profile/${player.publicProfile.username}`} className="truncate font-semibold text-slate-900 hover:text-indigo-700">{player.name} <span className="text-xs font-normal text-indigo-600">@{player.publicProfile.username}</span></a> : <p className="truncate font-semibold text-slate-900">{player.name}</p>}
+                                  <p className="truncate text-xs text-slate-500">{player.publicProfile ? player.publicProfile.college || 'College hidden' : player.college || 'College not set'}</p>
+                                </div>
                               </div>
                               <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
                                 {player.isHost ? 'Host' : 'Player'}
@@ -749,11 +764,14 @@ export default function AptiQuizApp() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white">
                     <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Leaderboard</p>
                     <div className="space-y-2">
-                      {leaderboard.length > 0 ? leaderboard.map((entry: { id: string; rank: number; name: string; score: number; college?: string }) => (
+                      {leaderboard.length > 0 ? leaderboard.map((entry) => (
                         <div key={entry.id} className="flex items-center justify-between rounded-xl bg-white/5 px-3 py-2">
-                          <div>
-                            <span className="font-semibold text-white">#{entry.rank} {entry.name}</span>
-                            <p className="text-[11px] text-slate-400">{entry.college || 'No college listed'}</p>
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-indigo-400/20 text-[10px] font-bold text-indigo-100">{entry.publicProfile?.avatarUrl ? <img src={entry.publicProfile.avatarUrl} alt="" className="h-full w-full object-cover" /> : entry.name.slice(0, 1).toUpperCase()}</span>
+                            <div className="min-w-0">
+                              <span className="font-semibold text-white">#{entry.rank} {entry.publicProfile?.username ? <a href={`/profile/${entry.publicProfile.username}`} className="hover:text-indigo-200">{entry.name}</a> : entry.name}</span>
+                              <p className="text-[11px] text-slate-400">{entry.publicProfile ? entry.publicProfile.college || 'College hidden' : entry.college || 'No college listed'}</p>
+                            </div>
                           </div>
                           <span className="font-bold text-indigo-300">{entry.score}</span>
                         </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
+import type { UserProfile } from '@/components/profile-context';
 import {
   ArrowLeft,
   Check,
@@ -31,6 +32,7 @@ export type HostPlayer = {
   connected: boolean;
   lastAnswer?: { optionId?: string; points?: number; responseMs?: number; correct?: boolean } | null;
   isHost?: boolean;
+  publicProfile?: { fullName: string; username: string; avatarUrl: string | null; college: string; course: string; level: number; levelName: string } | null;
 };
 
 export type HostQuestion = {
@@ -71,7 +73,7 @@ export type HostRoom = {
   totalQuestions?: number;
   players: HostPlayer[];
   currentQuestion?: HostQuestion | null;
-  leaderboard: Array<{ id: string; name: string; score: number; rank: number; college?: string; answered?: boolean }>;
+  leaderboard: Array<{ id: string; name: string; score: number; rank: number; college?: string; answered?: boolean; publicProfile?: HostPlayer['publicProfile'] }>;
   questionResults?: HostRoundResult[] | null;
 };
 
@@ -81,6 +83,7 @@ type HostQuizConsoleProps = {
   remainingMs: number;
   roundHistory: HostRoundSnapshot[];
   error: string;
+  hostProfile: Pick<UserProfile, 'avatar' | 'username'> | null;
   onStart: () => void;
   onLeave: () => void;
   onStartNewQuiz: () => void;
@@ -118,6 +121,7 @@ export default function HostQuizConsole({
   remainingMs,
   roundHistory,
   error,
+  hostProfile,
   onStart,
   onLeave,
   onStartNewQuiz,
@@ -279,8 +283,8 @@ export default function HostQuizConsole({
               <span className={`h-2 w-2 rounded-full ${connectionStyles[connectionState]}`} />
               <span className="text-xs font-medium text-slate-300">{connectionLabels[connectionState]}</span>
             </div>
-            <div className="hidden h-8 w-8 items-center justify-center rounded-full border border-indigo-300/20 bg-indigo-400/15 text-xs font-bold text-indigo-100 sm:flex">{initials(room.hostName)}</div>
-            <span className="hidden max-w-28 truncate text-sm font-medium text-slate-200 sm:inline">{room.hostName}</span>
+            <a href="/profile" aria-label="Open host profile" className="hidden h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-indigo-300/20 bg-indigo-400/15 text-xs font-bold text-indigo-100 sm:flex">{hostProfile?.avatar ? <img src={hostProfile.avatar} alt="" className="h-full w-full object-cover" /> : initials(room.hostName)}</a>
+            <a href="/profile" className="hidden max-w-28 truncate text-sm font-medium text-slate-200 hover:text-indigo-200 sm:inline">{room.hostName}</a>
             <button type="button" onClick={() => setDialog('leave')} className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-300 transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-200" aria-label="Leave room">
               <ArrowLeft className="h-4 w-4" /><span className="hidden sm:inline">Leave room</span>
             </button>
@@ -404,7 +408,7 @@ export default function HostQuizConsole({
                     <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300">{participants.length} {participants.length === 1 ? 'player' : 'players'}</span>
                   </div>
                   <div className="space-y-2 p-3 sm:p-4">
-                    {participants.length ? participants.map((player) => <div key={player.id} className="host-player-enter flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#0d1523] px-3 py-3 sm:px-4"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400/25 to-cyan-300/15 text-sm font-bold text-indigo-100">{initials(player.name)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-white">{player.name}</p><p className="truncate text-xs text-slate-500">{player.college || 'College not provided'}</p></div><div className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${player.connected ? 'bg-emerald-400/10 text-emerald-200' : 'bg-slate-700/60 text-slate-300'}`}><span className={`h-1.5 w-1.5 rounded-full ${player.connected ? 'bg-emerald-400' : 'bg-slate-400'}`} />{player.connected ? 'Connected' : 'Disconnected'}</div><span className="hidden min-w-[76px] text-right text-[10px] font-medium text-slate-500 sm:block">Ready status unavailable</span></div>) : <div className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-400/10 text-indigo-200"><Users className="h-5 w-5" /></div><p className="mt-3 text-sm font-semibold text-white">The lobby is open</p><p className="mt-1 text-xs text-slate-500">Share the room code or QR to bring players in.</p></div>}
+                    {participants.length ? participants.map((player) => <div key={player.id} className="host-player-enter flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#0d1523] px-3 py-3 sm:px-4"><span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-indigo-400/25 to-cyan-300/15 text-sm font-bold text-indigo-100">{player.publicProfile?.avatarUrl ? <img src={player.publicProfile.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials(player.name)}</span><div className="min-w-0 flex-1">{player.publicProfile?.username ? <a href={`/profile/${player.publicProfile.username}`} className="block truncate text-sm font-semibold text-white hover:text-indigo-200">{player.name} <span className="text-xs font-normal text-indigo-200">@{player.publicProfile.username}</span></a> : <p className="truncate text-sm font-semibold text-white">{player.name}</p>}<p className="truncate text-xs text-slate-500">{player.publicProfile ? player.publicProfile.college || 'College hidden' : player.college || 'College not provided'}</p></div><div className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${player.connected ? 'bg-emerald-400/10 text-emerald-200' : 'bg-slate-700/60 text-slate-300'}`}><span className={`h-1.5 w-1.5 rounded-full ${player.connected ? 'bg-emerald-400' : 'bg-slate-400'}`} />{player.connected ? 'Connected' : 'Disconnected'}</div><span className="hidden min-w-[76px] text-right text-[10px] font-medium text-slate-500 sm:block">Ready status unavailable</span></div>) : <div className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-400/10 text-indigo-200"><Users className="h-5 w-5" /></div><p className="mt-3 text-sm font-semibold text-white">The lobby is open</p><p className="mt-1 text-xs text-slate-500">Share the room code or QR to bring players in.</p></div>}
                   </div>
                 </section>
               ) : (

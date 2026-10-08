@@ -1,5 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import { ProfileProvider } from '@/components/profile-context';
 
 export const metadata: Metadata = {
   title: 'AptiQuiz',
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><ProfileProvider>{children}</ProfileProvider></body>
     </html>
   );
 }

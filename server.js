@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 const http = require('http');
 const next = require('next');
 const { Server } = require('socket.io');
 const { createRoom, getRoomState, joinRoom, validateAnswer } = require('./lib/game-engine');
+const { findProfileByToken, getPublicProfilesByIds, recordCompletedQuizzes } = require('./lib/profile-store');
 
 const port = Number(process.env.PORT || 3000);
 const dev = process.env.NODE_ENV !== 'production';
@@ -14,17 +16,99 @@ function getRoomByCode(code) {
   return rooms.get(String(code).toUpperCase()) || null;
 }
 
-function broadcastRoom(room) {
-  const payload = getRoomState(room);
+async function getRoomSnapshot(room) {
+  const profiles = await getPublicProfilesByIds(room.players.map((player) => player.profileId).filter(Boolean));
+  const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
+  room.players.forEach((player) => {
+    if (!player.profileId) return;
+    const profile = profilesById.get(player.profileId);
+    player.publicProfile = publicRoomIdentity(profile);
+    player.college = profile?.college || '';
+  });
+  const snapshot = getRoomState(room);
+  const publicProfiles = new Map(room.players.map((player) => [player.id, player.publicProfile || null]));
+  return {
+    ...snapshot,
+    players: snapshot.players.map((player) => ({ ...player, publicProfile: publicProfiles.get(player.id) || null })),
+    leaderboard: snapshot.leaderboard.map((entry) => ({ ...entry, publicProfile: publicProfiles.get(entry.id) || null })),
+  };
+}
+
+function publicRoomIdentity(profile) {
+  if (!profile) return null;
+  return {
+    fullName: profile.fullName,
+    username: profile.username,
+    avatarUrl: profile.avatarUrl,
+    college: profile.college,
+    course: profile.course,
+    level: profile.level,
+    levelName: profile.levelName,
+  };
+}
+
+function attachProfile(player, profile) {
+  if (!profile) return;
+  player.profileId = profile.id;
+}
+
+async function resolveProfile(token) {
+  if (!token) return null;
+  const profile = await findProfileByToken(token);
+  if (!profile) throw new Error('Profile session is invalid. Recreate your profile to continue.');
+  return profile;
+}
+
+async function broadcastRoom(room) {
+  const payload = await getRoomSnapshot(room);
   const io = globalThis.aptiQuizIo;
   if (!io) return;
   io.to(room.code).emit('room_state', payload);
 }
 
-function beginQuestion(room) {
+function collectRoundProfileAnswers(room) {
+  if (!Array.isArray(room.profileRounds)) room.profileRounds = [];
+  room.profileRounds.push({
+    questionId: room.currentQuestion.id,
+    topic: room.currentQuestion.topic || '',
+    answers: room.players.map((player) => {
+      const answer = room.answers[player.id] || null;
+      return {
+        playerId: player.id,
+        questionId: room.currentQuestion.id,
+        topic: room.currentQuestion.topic || '',
+        correct: !!answer?.correct,
+        responseMs: answer?.responseMs ?? null,
+        points: answer?.points || 0,
+      };
+    }),
+  });
+}
+
+async function recordCompletedRoom(room) {
+  const leaderboard = getRoomState(room).leaderboard;
+  const records = [];
+  for (const player of room.players) {
+    if (!player.profileId || player.role === 'HOST') continue;
+    const entry = leaderboard.find((candidate) => candidate.id === player.id);
+    records.push({ profileId: player.profileId, quiz: {
+      id: `${room.id}:${player.id}`,
+      roomCode: room.code,
+      name: `AptiQuiz Room ${room.code}`,
+      playedAt: room.finishedAt || Date.now(),
+      totalQuestions: room.questions.length,
+      score: player.score,
+      rank: entry?.rank || 0,
+      answers: (room.profileRounds || []).flatMap((round) => round.answers.filter((answer) => answer.playerId === player.id)),
+    } });
+  }
+  await recordCompletedQuizzes(records);
+}
+
+async function beginQuestion(room) {
   if (!room.questions || room.questions.length === 0) {
     room.state = 'FINISHED';
-    broadcastRoom(room);
+    await broadcastRoom(room);
     return;
   }
 
@@ -39,9 +123,9 @@ function beginQuestion(room) {
     player.lastAnswer = null;
   });
 
-  broadcastRoom(room);
+  await broadcastRoom(room);
   globalThis.aptiQuizIo.to(room.code).emit('question_started', {
-    room: getRoomState(room),
+    room: await getRoomSnapshot(room),
     question: room.currentQuestion,
   });
 
@@ -49,10 +133,11 @@ function beginQuestion(room) {
     clearTimeout(room.questionTimer);
   }
 
-  room.questionTimer = setTimeout(() => finishQuestion(room), room.currentQuestion.timeLimitMs + 200);
+  room.questionTimer = setTimeout(() => { void finishQuestion(room); }, room.currentQuestion.timeLimitMs + 200);
 }
 
-function finishQuestion(room) {
+async function finishQuestion(room) {
+  collectRoundProfileAnswers(room);
   room.state = 'QUESTION_ENDED';
   room.questionResults = room.players.map((player) => {
     const answer = room.answers[player.id] || null;
@@ -68,32 +153,41 @@ function finishQuestion(room) {
     };
   });
 
-  broadcastRoom(room);
+  await broadcastRoom(room);
   globalThis.aptiQuizIo.to(room.code).emit('round_results', {
-    room: getRoomState(room),
+    room: await getRoomSnapshot(room),
     question: room.currentQuestion,
     results: room.questionResults,
   });
 
   if (room.questionIndex >= room.questions.length - 1) {
-    room.questionTimer = setTimeout(() => {
-      room.state = 'FINISHED';
-      room.currentQuestion = null;
-      room.questionStartedAt = null;
-      room.questionEndsAt = null;
-      broadcastRoom(room);
-      globalThis.aptiQuizIo.to(room.code).emit('game_finished', {
-        room: getRoomState(room),
-        leaderboard: getRoomState(room).leaderboard,
-      });
-    }, 3500);
+    room.questionTimer = setTimeout(() => { void finishRoom(room); }, 3500);
     return;
   }
 
   room.questionTimer = setTimeout(() => {
     room.questionIndex += 1;
-    beginQuestion(room);
+    void beginQuestion(room);
   }, 3500);
+}
+
+async function finishRoom(room) {
+  room.state = 'FINISHED';
+  room.finishedAt = Date.now();
+  room.currentQuestion = null;
+  room.questionStartedAt = null;
+  room.questionEndsAt = null;
+  try {
+    await recordCompletedRoom(room);
+  } catch (error) {
+    console.error('Unable to persist quiz history:', error);
+  }
+  const snapshot = await getRoomSnapshot(room);
+  globalThis.aptiQuizIo.to(room.code).emit('room_state', snapshot);
+  globalThis.aptiQuizIo.to(room.code).emit('game_finished', {
+    room: snapshot,
+    leaderboard: snapshot.leaderboard,
+  });
 }
 
 function sanitizeError(message) {
@@ -112,58 +206,102 @@ app.prepare().then(() => {
   globalThis.aptiQuizIo = io;
 
   io.on('connection', (socket) => {
-    socket.on('host_create_room', ({ hostName }) => {
-      const room = createRoom({ hostName: hostName || 'Host' });
-      rooms.set(room.code, room);
-      socket.join(room.code);
-      socket.data.roomCode = room.code;
-      socket.data.playerId = room.hostId;
-      socket.emit('room_created', { roomCode: room.code, room: getRoomState(room) });
-      socket.emit('room_state', getRoomState(room));
+    socket.on('host_create_room', async ({ hostName, profileToken } = {}) => {
+      try {
+        const profile = await resolveProfile(profileToken);
+        const room = createRoom({ hostName: profile?.fullName || hostName || 'Host' });
+        room.profileRounds = [];
+        await attachProfile(room.players[0], profile);
+        rooms.set(room.code, room);
+        socket.join(room.code);
+        socket.data.roomCode = room.code;
+        socket.data.playerId = room.hostId;
+        const snapshot = await getRoomSnapshot(room);
+        socket.emit('room_created', { roomCode: room.code, room: snapshot });
+        socket.emit('room_state', snapshot);
+      } catch (error) {
+        socket.emit('error', sanitizeError(error.message));
+      }
     });
 
-    socket.on('join_room', ({ roomCode, name, college, playerId }) => {
+    socket.on('join_room', async ({ roomCode, name, college, playerId, profileToken } = {}) => {
       const room = getRoomByCode(roomCode);
       if (!room) {
         socket.emit('error', sanitizeError('Room not found. Check the code and try again.'));
         return;
       }
 
-      const joinResult = joinRoom(room, { name, college, playerId });
+      let profile;
+      try {
+        profile = await resolveProfile(profileToken);
+      } catch (error) {
+        socket.emit('error', sanitizeError(error.message));
+        return;
+      }
+      const existingPlayer = room.players.find((player) => player.id === playerId);
+      if (existingPlayer?.profileId && existingPlayer.profileId !== profile?.id) {
+        socket.emit('error', sanitizeError('This player session requires its linked profile.'));
+        return;
+      }
+      const visibleCollege = profile
+        ? profile.profileVisibility === 'public' && profile.showCollege ? profile.college : ''
+        : college;
+      const joinResult = joinRoom(room, { name: profile?.fullName || name, college: visibleCollege, playerId });
       if (!joinResult.ok) {
         socket.emit('error', sanitizeError(joinResult.reason || 'Unable to join room.'));
         return;
       }
+      await attachProfile(joinResult.player, profile);
 
       socket.data.roomCode = room.code;
       socket.data.playerId = joinResult.player.id;
       socket.join(room.code);
 
-      io.to(room.code).emit('player_joined', { player: joinResult.player, room: getRoomState(room) });
-      broadcastRoom(room);
+      const snapshot = await getRoomSnapshot(room);
+      const joinedPlayer = snapshot.players.find((player) => player.id === joinResult.player.id);
+      socket.emit('joined_room', { playerId: joinResult.player.id, player: joinedPlayer, room: snapshot });
+      io.to(room.code).emit('player_joined', { player: joinedPlayer, room: snapshot });
+      await broadcastRoom(room);
     });
 
-    socket.on('player_reconnect', ({ roomCode, playerId, name }) => {
+    socket.on('player_reconnect', async ({ roomCode, playerId, name, profileToken } = {}) => {
       const room = getRoomByCode(roomCode);
       if (!room) {
         socket.emit('error', sanitizeError('That room no longer exists.'));
         return;
       }
 
-      const restored = joinRoom(room, { name, playerId });
+      let profile;
+      try {
+        profile = await resolveProfile(profileToken);
+      } catch (error) {
+        socket.emit('error', sanitizeError(error.message));
+        return;
+      }
+      const existingPlayer = room.players.find((player) => player.id === playerId);
+      if (existingPlayer?.profileId && existingPlayer.profileId !== profile?.id) {
+        socket.emit('error', sanitizeError('This player session requires its linked profile.'));
+        return;
+      }
+      const visibleCollege = profile
+        ? profile.profileVisibility === 'public' && profile.showCollege ? profile.college : ''
+        : '';
+      const restored = joinRoom(room, { name: profile?.fullName || name, college: visibleCollege, playerId });
       if (!restored.ok) {
         socket.emit('error', sanitizeError(restored.reason || 'Reconnect failed.'));
         return;
       }
+      await attachProfile(restored.player, profile);
 
       socket.data.roomCode = room.code;
       socket.data.playerId = restored.player.id;
       socket.join(room.code);
-      socket.emit('reconnect_state', { room: getRoomState(room), playerId: restored.player.id });
-      socket.emit('room_state', getRoomState(room));
+      const snapshot = await getRoomSnapshot(room);
+      socket.emit('reconnect_state', { room: snapshot, playerId: restored.player.id });
+      socket.emit('room_state', snapshot);
     });
 
-    socket.on('host_start_game', ({ roomCode }) => {
+    socket.on('host_start_game', async ({ roomCode }) => {
       const room = getRoomByCode(roomCode);
       if (!room) {
         socket.emit('error', sanitizeError('Room not found.'));
@@ -178,22 +316,23 @@ app.prepare().then(() => {
       room.questionIndex = 0;
       room.currentQuestion = null;
       room.questionResults = null;
+      room.profileRounds = [];
       room.players.forEach((player) => {
         player.score = 0;
         player.answered = false;
         player.lastAnswer = null;
       });
 
-      beginQuestion(room);
+      await beginQuestion(room);
     });
 
-    socket.on('request_current_state', ({ roomCode }) => {
+    socket.on('request_current_state', async ({ roomCode }) => {
       const room = getRoomByCode(roomCode);
       if (!room) {
         socket.emit('error', sanitizeError('Room not found.'));
         return;
       }
-      socket.emit('room_state', getRoomState(room));
+      socket.emit('room_state', await getRoomSnapshot(room));
     });
 
     socket.on('submit_answer', ({ roomCode, playerId, questionId, optionId }) => {
@@ -215,7 +354,7 @@ app.prepare().then(() => {
         points: validation.result.points,
         correct: validation.result.isCorrect,
       });
-      broadcastRoom(room);
+      void broadcastRoom(room);
     });
 
     socket.on('disconnect', () => {
@@ -229,7 +368,7 @@ app.prepare().then(() => {
         player.connected = false;
         player.lastSeen = Date.now();
       }
-      broadcastRoom(room);
+      void broadcastRoom(room);
     });
   });
 
