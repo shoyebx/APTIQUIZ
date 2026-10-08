@@ -256,6 +256,11 @@ export default function AptiQuizApp() {
       setLastMessage('Question live — answer before the server deadline.');
     });
 
+    socket.on('answer_received', ({ optionId, points, correct }) => {
+      setSelectedOptionId('');
+      setLastMessage(correct ? `Correct! +${points} points.` : `Incorrect. The correct answer was option ${optionId}.`);
+    });
+
     socket.on('round_results', ({ room, results }: { room: RoomSnapshot; results: HostRoundResult[] }) => {
       setRoomState(room);
       setSelectedOptionId('');
